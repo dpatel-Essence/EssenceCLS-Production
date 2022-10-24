@@ -1,0 +1,771 @@
+---
+title: "03_CLS_Spend_Response_Curves"
+author: "Essence Global Advanced Analytics Team"
+date: "`r Sys.Date()`"
+output:
+  html_notebook:
+    toc: yes
+    toc_float: yes
+    number_sections: no
+    theme: cerulean
+    highlight: zenburn
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(knitr.table.format = "html")
+options(digits = 5)
+options(scipen = 100)
+knitr::opts_chunk$set(tidy.opts = list(width.cutoff = 80), tidy = TRUE)
+knitr::opts_chunk$set(fig.width = 15)
+knitr::opts_chunk$set(fig.height = 10)
+# install.packages("pacman")
+library(pacman) # for quick load/install of packages
+p_load(dplyr, readr, tidyverse, reticulate, lubridate, janitor, sqldf, googlesheets4)
+p_load(skimr, splitstackshape, stringr, rqdatatable)
+p_load(moments)
+p_load(kableExtra)
+p_load(ggplot2, plotly, echarts4r, ggpubr, forcats, scales, RColorBrewer,gridExtra)
+p_load(ggthemes)
+p_load(caret, recipes)
+p_load(glmnet)
+p_load(elasticnet)
+p_load(Metrics)
+p_load(fastDummies)
+p_load(broom)
+p_load(htmlwidgets)
+p_load(solitude)
+p_load(mlbench)
+p_load(uwot)
+```
+
+
+# Use Dataset created from 02_CLS_Data_Summary_2022_0914_Data_Analysis File
+
+## Loading Data
+
+### Load Google Sheet
+
+```{r}
+Final_CLS_2022_Study_List_Non_Search_model_file <- read_sheet(
+  "https://docs.google.com/spreadsheets/d/1N48rTeq7md0v8w8pG_8XIiuapPHQAeO5WoWIB3eaceI/edit#gid=1449351377",
+  sheet = "FinalDataset_2022_Update"
+) %>%
+  mutate(
+    Significant_Spend =
+      as.numeric(
+        case_when(
+          probability_of_lift >= 0.9 ~ 1,
+          TRUE ~ 0
+        )
+      ),
+    country = case_when(
+      country == "NA" ~ "US",
+      TRUE ~ country
+    ),
+    region_v2 = case_when(
+      country == "US" ~ "NA",
+      country == "CA" ~ "NA",
+      country == "US + CA" ~ "NA",
+      TRUE ~ region
+    )
+  ) %>%
+  filter(channel != "Search") %>%
+  # filter out studies without reported lifts
+  filter(exposed != -1) %>%
+  # filter out google pay study
+  filter(study_id != "149142217") %>%
+  # filter out very negative absolute lifts
+  filter(absolute_lift > -1000) %>%
+  mutate(
+    pa = case_when(
+      pa == "Google Ads" ~ "SMB", # Step 1
+      pa == "YouTube" & conversion != "Type 256522942 ([MCC] YouTube TV - Web - Trial Start)" ~ "YTMP", # Step 2
+      pa == "YouTube Premium" ~ "YTMP", # Step 2
+      conversion == "Type 256522942 ([MCC] YouTube TV - Web - Trial Start)" ~ "YouTube TV", # Step 2
+      pa == "Cloud" & conversion != "Type 14257803 (Enterprise - Apps - Signup Confirm - Unique)" ~ "Cloud Workspace", # Step 3
+      pa == "Cloud" & conversion == "Type 14257803 (Enterprise - Apps - Signup Confirm - Unique)" ~ "Cloud GCP", # Step 3
+      pa == "Project Fi" ~ "Google Fi", # Step 4
+      pa == "Google Chrome" ~ "Chrome",
+      TRUE ~ pa
+    )
+  ) %>%
+  mutate(
+    parsed_type = parse_number(conversion),
+    grouped_conversion = case_when(
+      conversion %in% c("Chromebook Microsite Referral Clicks Q4 2015", "Type 251422729 (Chromebooks Microsite Referral Clicks (Q4 2017))") ~ "Chromebook Referrals",
+      conversion %in% c("Desktop Downloads", "Type 11541547 (Desktop Download)") ~
+        "Desktop Downloads",
+      pa == "Pixel" ~ "Mobile Conversions",
+      pa == "DSM" ~ "Non-Mobile Device Conversions",
+      conversion == "Type 302982954 (Lena - P Lead)" ~ "Lena P Lead",
+      conversion == "Type 288347008 (LENA - B Lead)" ~ "Lena B Lead",
+      conversion == "Type 288697653 (LENA - Q Lead)" ~ "Lena Q Lead",
+      parsed_type %in% c(181283993, 855508686) ~ "Workspace Free Trial Start",
+      parsed_type == 330755641 ~ "Microsite Conversions",
+      parsed_type == 14257803 ~ "Enterprise Signups",
+      parsed_type == 289680712 ~ "Google(iOs) First Open",
+      parsed_type == 256522942 ~ "YouTube TV - Web - Trial Start",
+      parsed_type %in% c(452391534, 221497833, 277150074) ~ "Trial Signups Complete",
+      TRUE ~ conversion
+    ),
+    pa = case_when(
+      conversion == "Type 288697653 (LENA - Q Lead)" ~ "SMB-QLead",
+      TRUE ~ pa
+    )
+  ) %>%
+  filter(absolute_lift > 0)
+
+
+# all.equal(Final_CLS_2022_Study_List_Non_Search_model_file,Final_CLS_2022_Study_List_Non_Search_v3)
+```
+
+# RUN FROM HERE
+
+# Create All Response Curves no outliers Removed
+
+## Folder for all Output and scripts
+
+```{r}
+folder_name <- paste0("Output/", "outputfiles_", Sys.Date(), "_", "Run1", "/")
+dir.create(folder_name) # it will throw a warning if folder exists
+
+# file.sources2 <- list.files(path = "Output/outputfiles_2022-10-14_Run1//", pattern =".html|.png", full.names = TRUE)
+file.sources <- list.files(path = "RScripts/", pattern = "*.R", full.names = TRUE)
+sapply(file.sources, source, .GlobalEnv)
+```
+## Check parameters
+
+```{r}
+
+### powers to try
+powers <- seq(0.1, 0.9, by = 0.01)
+powers2 <-c(seq(0.5,1.5, 0.5)
+            ,seq(2,6,1))
+
+# For testing purposes
+#powers <- seq(0.4, 0.5, by = 0.05)
+#powers2 <-seq(0.5,1, by = 0.5)
+
+
+### Lambda parameters
+parameters <- c(
+  #  seq(0.1, 2, by =0.1) ,  seq(2, 5, 0.5) ,
+  seq(5, 29, 1)
+  ,seq(30, 102, 4)
+  ,seq(110, 1000, 20)
+  ,seq(1020, 10020, 1000)
+)
+
+### elasticnet parameters
+alpha_parameters <- c(seq(0, 1, 0.25))
+
+# For Testing Purposes
+#alpha_parameters <- c(seq(1, 1, 1))
+
+```
+
+
+## Testing Different Model Types
+
+### Chrome
+
+#### Data Readin
+```{r}
+
+Final_CLS_2022_Study_List_Non_Search_model_file_chrome_pre <-
+  Final_CLS_2022_Study_List_Non_Search_model_file %>%
+  filter(pa == "Chrome") %>%
+  mutate(
+    id2 = row_number()
+  )
+
+df_test <-
+  Final_CLS_2022_Study_List_Non_Search_model_file_chrome_pre %>%
+  select(
+    region_v2, country, channel, tactic,
+    cost_spent_on_exposed_group:absolute_lift
+  )
+
+#iso_chrome <- isolationForest$new(sample_size = nrow(df_test), num_trees = 10000, seed = 1153)
+
+iso_chrome$fit(df_test)
+
+scores_train <- df_test %>%
+  iso_chrome$predict() %>%
+  arrange(desc(anomaly_score))
+
+Final_CLS_2022_Study_List_Non_Search_model_file_chrome_pre2 <-
+  Final_CLS_2022_Study_List_Non_Search_model_file_chrome_pre %>%
+  left_join(scores_train, by = c("id2" = "id")) %>% 
+  filter(average_depth > 3)
+
+
+Final_CLS_2022_Study_List_Non_Search_model_file_chrome <-
+  Final_CLS_2022_Study_List_Non_Search_model_file_chrome_pre2 %>%
+  named_group_split(tactic)
+```
+
+#### Run Model
+```{r, warning = false}
+fits_non_search_chrome <- model_wrapper_function(df = Final_CLS_2022_Study_List_Non_Search_model_file_chrome,poly_ind = 1)
+
+best_ind_non_search_chrome <- 
+  lapply(1:length(Final_CLS_2022_Study_List_Non_Search_model_file_chrome), best_ind_function,df = fits_non_search_chrome,
+         df2 = Final_CLS_2022_Study_List_Non_Search_model_file_chrome) 
+
+coef_non_search_chrome <- best_ind_non_search_chrome %>% bind_rows #make a matrix of all coefs
+
+best_fit_non_search_chrome <- best_ind_non_search_chrome %>%
+  set_names(names_function(Final_CLS_2022_Study_List_Non_Search_model_file_chrome_pre, tactic))  
+```
+
+#### Create Graph Object
+```{r}
+graph_list_chrome <- lapply(1:length(best_fit_non_search_chrome), graphing_function4, df1 = best_fit_non_search_chrome, df2 = Final_CLS_2022_Study_List_Non_Search_model_file_chrome)
+```
+
+
+### Cloud
+
+#### Data Readin
+```{r}
+
+Final_CLS_2022_Study_List_Non_Search_model_file_cloud_pre <-
+  Final_CLS_2022_Study_List_Non_Search_model_file %>%
+  filter(pa %in% c("Cloud GCP", "Cloud Workspace")) %>%
+  mutate(
+    pa = "Cloud",
+    pa2 = "Cloud - All Channel"
+  ) %>%
+  mutate(
+    id2 = row_number()
+  )
+
+df_test <-
+  Final_CLS_2022_Study_List_Non_Search_model_file_cloud_pre %>%
+  # select(-study_id, -id2, -region, -scaling_factor, -quarter, -pa, -study_name)
+  select(
+    region_v2, country, channel, tactic,
+    # treatment_user_count:control,
+    cost_spent_on_exposed_group:absolute_lift, parsed_type
+  )
+
+#iso_cloud <- isolationForest$new(sample_size = nrow(df_test), num_trees = 10000, seed = 1153)
+
+iso_cloud$fit(df_test)
+
+scores_train <- df_test %>%
+  iso_cloud$predict() %>%
+  arrange(desc(anomaly_score))
+
+Final_CLS_2022_Study_List_Non_Search_model_file_cloud_pre2 <-
+  Final_CLS_2022_Study_List_Non_Search_model_file_cloud_pre %>%
+  left_join(scores_train, by = c("id2" = "id"))
+
+Final_CLS_2022_Study_List_Non_Search_model_file_cloud <-
+  Final_CLS_2022_Study_List_Non_Search_model_file_cloud_pre2 %>%
+  named_group_split(pa2)
+
+```
+#### Run Model
+```{r, warning = false}
+fits_non_search_cloud <- model_wrapper_function(df = Final_CLS_2022_Study_List_Non_Search_model_file_cloud,poly_ind = 1)
+
+best_ind_non_search_cloud <- 
+  lapply(1:length(Final_CLS_2022_Study_List_Non_Search_model_file_cloud), best_ind_function,df = fits_non_search_cloud,
+         df2 = Final_CLS_2022_Study_List_Non_Search_model_file_cloud) 
+
+coef_non_search_cloud <- best_ind_non_search_cloud %>% bind_rows #make a matrix of all coefs
+
+best_fit_non_search_cloud <- best_ind_non_search_cloud %>%
+  set_names(names_function(Final_CLS_2022_Study_List_Non_Search_model_file_cloud_pre, pa2))  
+```
+
+#### Create Graph Object
+```{r}
+graph_list_cloud <- lapply(1:length(best_fit_non_search_cloud), graphing_function4, df1 = best_fit_non_search_cloud, df2 = Final_CLS_2022_Study_List_Non_Search_model_file_cloud)
+```
+
+### YouTube
+
+#### Data Readin
+```{r}
+
+Final_CLS_2022_Study_List_Non_Search_model_file_youtube_pre <-
+  Final_CLS_2022_Study_List_Non_Search_model_file %>%
+  filter(pa %in% c("YouTube TV", "YTMP")) %>%
+  mutate(
+    pa = "YouTube",
+    pa2 = "YouTube"
+  ) %>%
+  #  filter(absolute_lift < 5000) %>%
+  mutate(
+    id2 = row_number()
+  )
+
+df_test <-
+  Final_CLS_2022_Study_List_Non_Search_model_file_youtube_pre %>%
+  # select(-study_id, -id2, -region, -scaling_factor, -quarter, -pa, -study_name)
+  select(
+    region_v2, country, channel, tactic,
+    # treatment_user_count:control,
+    cost_spent_on_exposed_group:absolute_lift, parsed_type
+  )
+
+#iso_yt <- isolationForest$new(sample_size = nrow(df_test), num_trees = 10000, seed = 1153)
+
+iso_yt$fit(df_test)
+
+scores_train <- df_test %>%
+  iso_yt$predict() %>%
+  arrange(desc(anomaly_score))
+
+Final_CLS_2022_Study_List_Non_Search_model_file_youtube_pre2 <-
+  Final_CLS_2022_Study_List_Non_Search_model_file_youtube_pre %>%
+  left_join(scores_train, by = c("id2" = "id")) %>%
+  filter(average_depth > 3.89)
+
+Final_CLS_2022_Study_List_Non_Search_model_file_youtube <-
+  Final_CLS_2022_Study_List_Non_Search_model_file_youtube_pre2 %>%
+  named_group_split(region_v2)
+```
+
+#### Run Model
+```{r, warning = false}
+fits_non_search_youtube <- model_wrapper_function(df = Final_CLS_2022_Study_List_Non_Search_model_file_youtube,poly_ind = 1)
+
+best_ind_non_search_youtube <- 
+  lapply(1:length(Final_CLS_2022_Study_List_Non_Search_model_file_youtube), best_ind_function,df = fits_non_search_youtube,
+         df2 = Final_CLS_2022_Study_List_Non_Search_model_file_youtube) 
+
+coef_non_search_youtube <- best_ind_non_search_youtube %>% bind_rows #make a matrix of all coefs
+
+best_fit_non_search_youtube <- best_ind_non_search_youtube %>%
+  set_names(names_function(Final_CLS_2022_Study_List_Non_Search_model_file_youtube_pre, pa2))  
+```
+
+#### Create Graph Object
+```{r}
+graph_list_youtube <- lapply(1:length(best_fit_non_search_youtube), graphing_function4, df1 = best_fit_non_search_youtube, df2 = Final_CLS_2022_Study_List_Non_Search_model_file_youtube)
+```
+
+### DSM
+
+#### Data Readin
+```{r}
+
+Final_CLS_2022_Study_List_Non_Search_model_file_dsm_pre <-
+  Final_CLS_2022_Study_List_Non_Search_model_file %>%
+  filter(pa == "DSM") %>%
+  filter(region_v2 != "APAC") %>%
+  # filter(absolute_lift < 1000) # %>%
+  # filter(study_id != '6297420') #%>%
+  #  filter(study_id !='149161711') %>%
+  #  filter(study_id != '148613002') %>%
+  # filter(study_id !='3284625') %>%
+  #  filter(study_id !='3329131')
+  mutate(
+    id2 = row_number()
+  )
+
+df_test <-
+  Final_CLS_2022_Study_List_Non_Search_model_file_dsm_pre %>%
+  # select(-study_id, -id2, -region, -scaling_factor, -quarter, -pa, -study_name)
+  select(
+    region_v2, country, channel, tactic,
+    # treatment_user_count:control,
+    cost_spent_on_exposed_group:absolute_lift
+  )
+
+#iso_dsm <- isolationForest$new(sample_size = nrow(df_test), num_trees = 10000, seed = 1152)
+
+iso_dsm$fit(df_test)
+
+scores_train <- df_test %>%
+  iso_dsm$predict() %>%
+  arrange(desc(anomaly_score))
+
+Final_CLS_2022_Study_List_Non_Search_model_file_dsm_pre2 <-
+  Final_CLS_2022_Study_List_Non_Search_model_file_dsm_pre %>%
+  left_join(scores_train, by = c("id2" = "id")) %>%
+  filter(average_depth > 5)
+
+Final_CLS_2022_Study_List_Non_Search_model_file_dsm <-
+  Final_CLS_2022_Study_List_Non_Search_model_file_dsm_pre2 %>%
+  named_group_split(region_v2, channel)
+```
+
+#### Run Model
+```{r, warning = false}
+fits_non_search_dsm <- model_wrapper_function(df = Final_CLS_2022_Study_List_Non_Search_model_file_dsm,poly_ind = 1)
+
+best_ind_non_search_dsm <- 
+  lapply(1:length(Final_CLS_2022_Study_List_Non_Search_model_file_dsm), best_ind_function,df = fits_non_search_dsm,
+         df2 = Final_CLS_2022_Study_List_Non_Search_model_file_dsm)
+
+coef_non_search_dsm <- best_ind_non_search_dsm %>% bind_rows #make a matrix of all coefs
+
+best_fit_non_search_dsm <- best_ind_non_search_dsm %>%
+  set_names(names_function(Final_CLS_2022_Study_List_Non_Search_model_file_dsm_pre, region_v2,channel))  
+```
+
+#### Create Graph Object
+```{r}
+graph_list_dsm <- lapply(1:length(best_fit_non_search_dsm), graphing_function4, df1 = best_fit_non_search_dsm, df2 = Final_CLS_2022_Study_List_Non_Search_model_file_dsm)
+```
+### Pixel
+
+#### Data Readin
+```{r}
+
+Final_CLS_2022_Study_List_Non_Search_model_file_pixel_pre <-
+  Final_CLS_2022_Study_List_Non_Search_model_file %>%
+  filter(pa == "Pixel") %>%
+  mutate(
+    pa2 = "Pixel - All Channel"
+  ) %>%
+  #   filter(absolute_lift < 1000)  %>%
+  # filter(study_id != '6297420') #%>%
+  #  filter(study_id !='149161711') %>%
+  #  filter(study_id != '148613002') %>%
+  # filter(study_id !='3284625') %>%
+  #  filter(study_id !='3329131')
+  mutate(
+    id2 = row_number()
+  )
+
+df_test <-
+  Final_CLS_2022_Study_List_Non_Search_model_file_pixel_pre %>%
+  # select(-study_id, -id2, -region, -scaling_factor, -quarter, -pa, -study_name)
+  select(
+    region_v2, country, channel, tactic,
+    # treatment_user_count:control,
+    cost_spent_on_exposed_group:absolute_lift
+  )
+
+#iso_pixel <- isolationForest$new(sample_size = nrow(df_test), num_trees = 10000, seed = 1152)
+
+iso_pixel$fit(df_test)
+
+scores_train <- df_test %>%
+  iso_pixel$predict() %>%
+  arrange(desc(anomaly_score))
+
+Final_CLS_2022_Study_List_Non_Search_model_file_pixel_pre2 <-
+  Final_CLS_2022_Study_List_Non_Search_model_file_pixel_pre %>%
+  left_join(scores_train, by = c("id2" = "id")) %>%
+  filter(average_depth > 3.1)
+
+Final_CLS_2022_Study_List_Non_Search_model_file_pixel_pre2
+
+
+Final_CLS_2022_Study_List_Non_Search_model_file_pixel <-
+  Final_CLS_2022_Study_List_Non_Search_model_file_pixel_pre2 %>%
+  named_group_split(pa2)
+```
+
+#### Run Model
+```{r, warning = false}
+fits_non_search_pixel <- model_wrapper_function(df = Final_CLS_2022_Study_List_Non_Search_model_file_pixel,poly_ind = 1)
+
+best_ind_non_search_pixel <- 
+  lapply(1:length(Final_CLS_2022_Study_List_Non_Search_model_file_pixel), best_ind_function,df = fits_non_search_pixel,
+         df2 = Final_CLS_2022_Study_List_Non_Search_model_file_pixel) 
+
+coef_non_search_pixel <- best_ind_non_search_pixel %>% bind_rows #make a matrix of all coefs
+
+best_fit_non_search_pixel <- best_ind_non_search_pixel %>%
+  set_names(names_function(Final_CLS_2022_Study_List_Non_Search_model_file_pixel_pre, pa2))  
+```
+
+#### Create Graph Object
+```{r}
+graph_list_pixel <- lapply(1:length(best_fit_non_search_pixel), graphing_function4, df1 = best_fit_non_search_pixel, df2 = Final_CLS_2022_Study_List_Non_Search_model_file_pixel)
+```
+
+
+### Fi
+
+#### Data Readin
+```{r}
+
+Final_CLS_2022_Study_List_Non_Search_model_file_fi_pre <-
+  Final_CLS_2022_Study_List_Non_Search_model_file %>%
+  filter(pa == "Google Fi") %>%
+  mutate(
+    pa2 = "Fi - All Channel"
+  ) %>%
+  #   filter(absolute_lift < 1000)  %>%
+  # filter(study_id != '6297420') #%>%
+  #  filter(study_id !='149161711') %>%
+  #  filter(study_id != '148613002') %>%
+  # filter(study_id !='3284625') %>%
+  #  filter(study_id !='3329131')
+  mutate(
+    id2 = row_number()
+  )
+
+df_test <-
+  Final_CLS_2022_Study_List_Non_Search_model_file_fi_pre %>%
+  # select(-study_id, -id2, -region, -scaling_factor, -quarter, -pa, -study_name)
+  select(
+    region_v2, country, channel, tactic,
+    # treatment_user_count:control,
+    cost_spent_on_exposed_group:absolute_lift
+  )
+
+#iso_fi <- isolationForest$new(sample_size = nrow(df_test), num_trees = 10000, seed = 1152)
+
+iso_fi$fit(df_test)
+
+scores_train <- df_test %>%
+  iso_fi$predict() %>%
+  arrange(desc(anomaly_score))
+
+Final_CLS_2022_Study_List_Non_Search_model_file_fi_pre2 <-
+  Final_CLS_2022_Study_List_Non_Search_model_file_fi_pre %>%
+  left_join(scores_train, by = c("id2" = "id")) %>%
+  filter(average_depth > 4.75)
+
+Final_CLS_2022_Study_List_Non_Search_model_file_fi_pre2
+
+
+Final_CLS_2022_Study_List_Non_Search_model_file_fi <-
+  Final_CLS_2022_Study_List_Non_Search_model_file_fi_pre2 %>%
+  named_group_split(channel)
+```
+
+
+#### Run Model
+```{r, warning = false}
+fits_non_search_fi <- model_wrapper_function(df = Final_CLS_2022_Study_List_Non_Search_model_file_fi,poly_ind = 1)
+
+best_ind_non_search_fi <- 
+  lapply(1:length(Final_CLS_2022_Study_List_Non_Search_model_file_fi), best_ind_function,df = fits_non_search_fi,
+         df2 = Final_CLS_2022_Study_List_Non_Search_model_file_fi) 
+
+coef_non_search_fi <- best_ind_non_search_fi %>% bind_rows #make a matrix of all coefs
+
+best_fit_non_search_fi <- best_ind_non_search_fi %>%
+  set_names(names_function(Final_CLS_2022_Study_List_Non_Search_model_file_fi_pre, pa2))  
+```
+
+#### Create Graph Object
+```{r}
+graph_list_fi <- lapply(1:length(best_fit_non_search_fi), graphing_function4, df1 = best_fit_non_search_fi, df2 = Final_CLS_2022_Study_List_Non_Search_model_file_fi)
+```
+
+
+### SMB - QLeads
+
+
+#### Data Readin
+```{r}
+
+Final_CLS_2022_Study_List_Non_Search_model_file_smbq_pre <-
+  Final_CLS_2022_Study_List_Non_Search_model_file %>%
+  filter(grouped_conversion == 'Lena Q Lead') %>%
+  mutate(
+    pa2 = "SMB - Q-Lead"
+  ) %>%
+  #   filter(absolute_lift < 1000)  %>%
+  # filter(study_id != '6297420') #%>%
+  #  filter(study_id !='149161711') %>%
+  #  filter(study_id != '148613002') %>%
+  # filter(study_id !='3284625') %>%
+  #  filter(study_id !='3329131')
+  mutate(
+    id2 = row_number()
+  )
+
+df_test <-
+  Final_CLS_2022_Study_List_Non_Search_model_file_smbq_pre %>%
+  # select(-study_id, -id2, -region, -scaling_factor, -quarter, -pa, -study_name)
+  select(
+    region_v2, country, channel, tactic,
+    # treatment_user_count:control,
+    cost_spent_on_exposed_group:absolute_lift
+  )
+
+iso_smbq <- isolationForest$new(sample_size = nrow(df_test), num_trees = 10000, seed = 1152)
+
+iso_smbq$fit(df_test)
+
+scores_train <- df_test %>%
+  iso_smbq$predict() %>%
+  arrange(desc(anomaly_score))
+
+Final_CLS_2022_Study_List_Non_Search_model_file_smbq_pre2 <-
+  Final_CLS_2022_Study_List_Non_Search_model_file_smbq_pre %>%
+  left_join(scores_train, by = c("id2" = "id")) %>% 
+  filter(average_depth > 1)
+
+Final_CLS_2022_Study_List_Non_Search_model_file_smbq <-
+  Final_CLS_2022_Study_List_Non_Search_model_file_smbq_pre2 %>%
+  named_group_split(pa2)
+```
+
+#### Run Model
+```{r, warning = false}
+fits_non_search_smbq <- model_wrapper_function(df = Final_CLS_2022_Study_List_Non_Search_model_file_smbq,poly_ind = 1)
+
+best_ind_non_search_smbq <- 
+  lapply(1:length(Final_CLS_2022_Study_List_Non_Search_model_file_smbq), best_ind_function,df = fits_non_search_smbq,
+         df2 = Final_CLS_2022_Study_List_Non_Search_model_file_smbq) 
+
+coef_non_search_smbq <- best_ind_non_search_smbq %>% bind_rows #make a matrix of all coefs
+
+best_fit_non_search_smbq <- best_ind_non_search_smbq %>%
+  set_names(names_function(Final_CLS_2022_Study_List_Non_Search_model_file_smbq_pre, pa2))  
+```
+
+#### Create Graph Object
+```{r}
+graph_list_smbq <- lapply(1:length(best_fit_non_search_smbq), graphing_function4, df1 = best_fit_non_search_smbq, df2 = Final_CLS_2022_Study_List_Non_Search_model_file_smbq)
+```
+
+### SMB - BLeads
+
+#### Data Readin
+```{r}
+
+Final_CLS_2022_Study_List_Non_Search_model_file_smbb_pre <-
+  Final_CLS_2022_Study_List_Non_Search_model_file %>%
+  filter(pa == "SMB" & grouped_conversion == 'Lena B Lead') %>%
+  mutate(
+    pa2 = "SMB - B-Lead"
+  ) %>%
+  #   filter(absolute_lift < 1000)  %>%
+  # filter(study_id != '6297420') #%>%
+  #  filter(study_id !='149161711') %>%
+  #  filter(study_id != '148613002') %>%
+  # filter(study_id !='3284625') %>%
+  #  filter(study_id !='3329131')
+  mutate(
+    id2 = row_number()
+  )
+
+df_test <-
+  Final_CLS_2022_Study_List_Non_Search_model_file_smbb_pre %>%
+  # select(-study_id, -id2, -region, -scaling_factor, -quarter, -pa, -study_name)
+  select(
+    region_v2, country, channel, tactic,
+    # treatment_user_count:control,
+    cost_spent_on_exposed_group:absolute_lift
+  )
+
+iso_smbb <- isolationForest$new(sample_size = nrow(df_test), num_trees = 10000, seed = 1152)
+
+iso_smbb$fit(df_test)
+
+scores_train <- df_test %>%
+  iso_smbb$predict() %>%
+  arrange(desc(anomaly_score))
+
+Final_CLS_2022_Study_List_Non_Search_model_file_smbb_pre2 <-
+  Final_CLS_2022_Study_List_Non_Search_model_file_smbb_pre %>%
+  left_join(scores_train, by = c("id2" = "id")) %>% 
+  filter(average_depth > 4)
+
+Final_CLS_2022_Study_List_Non_Search_model_file_smbb <-
+  Final_CLS_2022_Study_List_Non_Search_model_file_smbb_pre2 %>%
+  named_group_split(channel)
+```
+
+#### Run Model
+```{r, warning = false}
+fits_non_search_smbb <- model_wrapper_function(df = Final_CLS_2022_Study_List_Non_Search_model_file_smbb,poly_ind = 1)
+
+best_ind_non_search_smbb <- 
+  lapply(1:length(Final_CLS_2022_Study_List_Non_Search_model_file_smbb), best_ind_function,df = fits_non_search_smbb,
+         df2 = Final_CLS_2022_Study_List_Non_Search_model_file_smbb) 
+
+coef_non_search_smbb <- best_ind_non_search_smbb %>% bind_rows #make a matrix of all coefs
+
+best_fit_non_search_smbb <- best_ind_non_search_smbb %>%
+  set_names(names_function(Final_CLS_2022_Study_List_Non_Search_model_file_smbb_pre, channel))  
+```
+
+#### Create Graph Object
+```{r}
+graph_list_smbb <- lapply(1:length(best_fit_non_search_smbb), graphing_function4, df1 = best_fit_non_search_smbb, df2 = Final_CLS_2022_Study_List_Non_Search_model_file_smbb)
+```
+## Function to refresh all graphs
+
+```{r}
+## Remove two youtube studies from original, add SMB EDA
+
+## for loop of all graph objects
+```
+
+
+
+## Export all graph lists
+
+
+```{r}
+graph_names <- mget(ls(pat = 'graph_list_'))
+   
+df_names <- mget(setdiff(ls(pattern = 'Final_CLS_2022_Study_List_Non_Search_model_file_'), ls(pattern = "pre")))
+
+rm(Final_CLS_2022_Study_List_Non_Search_model_file_Chrome,Final_CLS_2022_Study_List_Non_Search_model_file_Cloud,Final_CLS_2022_Study_List_Non_Search_model_file_YouTube)
+
+lapply(1:length(graph_names),
+      function(j) {
+lapply(1:length(df_names[[j]]),export_rplots_function2,starting_name = "Non_Search_",folder_name = folder_name,df_list = df_names[[j]],graphing_list = graph_names[j][[1]])
+      }
+       )
+```
+
+
+## Grid of all Response Curves
+
+[*Sub Plot Documentation*](https://plotly.com/r/subplots/)
+
+```{r, fig.height= 15, echo=FALSE,message=FALSE, warning = FALSE}
+
+lapply(1:length(graph_names),
+function(i){
+  subplot(graph_names[i][[1]], nrows = length(graph_names[i][[1]]))
+}
+)
+
+
+lapply(1:length(graph_names),
+function(i){
+#p1 = graph_names[i][[1]]
+do.call(grid.arrange,graph_names[i][[1]])
+#return(grid.arrange(grobs = p1))
+}
+)
+
+```
+
+## Coef Matrix
+
+```{r}
+coef.2_matrix <- mget((ls(pat = 'coef_')))
+
+coef.2_matrix %>%  bind_rows()
+
+
+```
+
+
+```{r}
+
+```
+## Graphs with Anomaly Scores
+
+```{r}
+graph_list.fi <- lapply(1:length(best_fit_non_search_fi), graphing_function4_w_anom, df1 = best_fit_non_search_fi, df2 = Final_CLS_2022_Study_List_Non_Search_model_file_fi)
+
+### Add GG Text Repel
+ggplotly(graph_list.fi[[2]])
+
+```
+
+
+
