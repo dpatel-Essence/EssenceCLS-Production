@@ -40,7 +40,6 @@ p_load(mlbench)
 p_load(uwot)
 ```
 
-
 # Use Dataset created from 02_CLS_Data_Summary_2022_0914_Data_Analysis File
 
 ## Loading Data
@@ -121,146 +120,7 @@ Final_CLS_2022_Study_List_Non_Search_model_file <- read_sheet(
 # all.equal(Final_CLS_2022_Study_List_Non_Search_model_file,Final_CLS_2022_Study_List_Non_Search_v3)
 ```
 
-### Check Correlation between Spend and Study Duration
-
-```{r}
-
-cor(Final_CLS_2022_Study_List_Non_Search_model_file$duration,Final_CLS_2022_Study_List_Non_Search_model_file$cost_spent_on_exposed_group)
-
-
-cor(Final_CLS_2022_Study_List_Non_Search_model_file$duration,Final_CLS_2022_Study_List_Non_Search_model_file$absolute_lift)
-
-```
-
-```{r}
-
-Final_CLS_2022_Study_List_Non_Search_model_file %>% 
-  select(duration,absolute_lift) %>% 
-  ggplot()+
-  aes(
-    x= duration,
-    y= absolute_lift
-  ) +
-  geom_point()
-
-```
-
-#### Testing Timing for each model
-```{r, warning=FALSE}
-fits_non_search_chrome <- list()
-fits_non_search_chrome_test <-list()
-
-start_time <- Sys.time()
-for (i in 1:length(Final_CLS_2022_Study_List_Non_Search_model_file_chrome)) {
-  fits_non_search_chrome[i] <- list(lapply(powers, ridge_lasso_function,
-    parameter_grid = parameters, alpha_grid = alpha_parameters, cost = "cost_spent_on_exposed_group",
-    response = "absolute_lift", data = Final_CLS_2022_Study_List_Non_Search_model_file_chrome[[i]]
-  ))
-}
-end_time <- Sys.time()
-
-start_time1 <- Sys.time()
-
-
-fits_non_search_chrome_test <- lapply(1, function (i)
-{
-  lapply(powers2, function(j){
-    list((lapply(powers, ridge_lasso_function4,powers2 = j,
-    parameter_grid = parameters, alpha_grid = alpha_parameters, cost = "cost_spent_on_exposed_group",
-    response = "absolute_lift", data = Final_CLS_2022_Study_List_Non_Search_model_file_chrome[[i]]
-    )
-    )
-    )
-  }
-  )
-}
-)
-
-names(Final_CLS_2022_Study_List_Non_Search_model_file_chrome)
-         
-
-    
-  i = 1
-  j = 2
-  
-  
-  fits_non_search_chrome_test<-
-  (lapply(powers, ridge_lasso_function4, powers2 = j,
-    parameter_grid = parameters, alpha_grid = alpha_parameters, cost = "cost_spent_on_exposed_group",
-    response = "absolute_lift", data = Final_CLS_2022_Study_List_Non_Search_model_file_chrome[[i]]
-    )
-    )  
-  
-  fits_non_search_chrome_test<-
-    lapply(powers2, function(j){
-    (lapply(powers, ridge_lasso_function4,powers2 = j,
-    parameter_grid = parameters, alpha_grid = alpha_parameters, cost = "cost_spent_on_exposed_group",
-    response = "absolute_lift", data = Final_CLS_2022_Study_List_Non_Search_model_file_chrome[[i]]
-    )
-    )
-  }
-  )
-  
-
-end_time1 <- Sys.time()
-
-  
-end_time - start_time
-end_time1 - start_time1
-  
-            
-    
-Final_CLS_2022_Study_List_Non_Search_model_file_chrome[[2]]["cost_spent_on_exposed_group"] %>% 
-    as.data.frame() %>% 
-    mutate_at(1,~(.^power)) %>% 
-    rename(cost_p = 1) %>%
-    mutate(cost_p2 = (cost_p^(1/power))^powers2) %>% 
-    data.matrix()
-  
-          
-fits_non_search_chrome <- lapply(1:length(Final_CLS_2022_Study_List_Non_Search_model_file_chrome), function(i) {
-  lapply(powers2, function(j) {
-    ((lapply(powers, ridge_lasso_function4,
-      powers2 = j,
-      parameter_grid = parameters, alpha_grid = alpha_parameters, cost = "cost_spent_on_exposed_group",
-      response = "absolute_lift", data = Final_CLS_2022_Study_List_Non_Search_model_file_chrome[[i]], poly_ind = 1
-    )
-    ))
-  })
-})
-
-best_ind_non_search_chrome <- 
-  lapply(1:length(Final_CLS_2022_Study_List_Non_Search_model_file_chrome), function(i,df = fits_non_search_chrome)
-  {
-    df[[i]] %>%
-  bind_rows() %>%
-  slice_min(TrainRMSE) %>%
-  mutate(
-    model = names(Final_CLS_2022_Study_List_Non_Search_model_file_chrome)[i] 
-  )
-  } 
-  )
-
-names(Final_CLS_2022_Study_List_Non_Search_model_file_chrome)[3] 
-
-Final_CLS_2022_Study_List_Non_Search_model_file_chrome[[i]] %>%
-  names()
-
-names(Final_CLS_2022_Study_List_Non_Search_model_file_chrome)[1] 
-
-
-fits_non_search_chrome[[1]][[1]][[1]]
-
-fits_non_search_chrome[[1]][[2]]
-
-map(map(fits_non_search_chrome[[1]],1),1)
-
-map(map(fits_non_search_chrome[[1]][[1]],1),1)
-```
-
-# RUN FROM HERE
-
-# Create All Response Curves no outliers Removed
+# Create All Response Curves only normal powers
 
 ## Folder for all Output and scripts
 
@@ -272,14 +132,14 @@ dir.create(folder_name) # it will throw a warning if folder exists
 file.sources <- list.files(path = "RScripts/", pattern = "*.R", full.names = TRUE)
 sapply(file.sources, source, .GlobalEnv)
 ```
+
 ## Check parameters
 
 ```{r}
 
 ### powers to try
-powers <- seq(0.1, 0.9, by = 0.01)
-powers2 <-c(seq(0.5,1.5, 0.5)
-            ,seq(2,6,1))
+powers <- seq(0.3, 0.4, by = 0.05)
+powers2 <- 1
 
 # For testing purposes
 #powers <- seq(0.4, 0.5, by = 0.05)
@@ -291,8 +151,8 @@ parameters <- c(
   #  seq(0.1, 2, by =0.1) ,  seq(2, 5, 0.5) ,
   seq(5, 29, 1)
   ,seq(30, 102, 4)
-  ,seq(110, 1000, 20)
-  ,seq(1020, 10020, 1000)
+  ,seq(110, 1000, 15)
+  ,seq(1000, 10020, 500)
 )
 
 ### elasticnet parameters
@@ -303,13 +163,15 @@ alpha_parameters <- c(seq(0, 1, 0.25))
 
 ```
 
-
 ## Testing Different Model Types
 
 ### Chrome
 
 #### Data Readin
+
 ```{r}
+
+start_time <- Sys.time()
 
 Final_CLS_2022_Study_List_Non_Search_model_file_chrome_pre <-
   Final_CLS_2022_Study_List_Non_Search_model_file %>%
@@ -325,7 +187,7 @@ df_test <-
     cost_spent_on_exposed_group:absolute_lift
   )
 
-#iso_chrome <- isolationForest$new(sample_size = nrow(df_test), num_trees = 10000, seed = 1153)
+iso_chrome <- isolationForest$new(sample_size = nrow(df_test), num_trees = 10000, seed = 1153)
 
 iso_chrome$fit(df_test)
 
@@ -345,8 +207,11 @@ Final_CLS_2022_Study_List_Non_Search_model_file_chrome <-
 ```
 
 #### Run Model
+
 ```{r, warning = false}
-fits_non_search_chrome <- model_wrapper_function(df = Final_CLS_2022_Study_List_Non_Search_model_file_chrome,poly_ind = 1)
+
+
+fits_non_search_chrome <- model_wrapper_function(df = Final_CLS_2022_Study_List_Non_Search_model_file_chrome,poly_ind = 0)
 
 best_ind_non_search_chrome <- 
   lapply(1:length(Final_CLS_2022_Study_List_Non_Search_model_file_chrome), best_ind_function,df = fits_non_search_chrome,
@@ -359,15 +224,25 @@ best_fit_non_search_chrome <- best_ind_non_search_chrome %>%
 ```
 
 #### Create Graph Object
+
 ```{r}
 graph_list_chrome <- lapply(1:length(best_fit_non_search_chrome), graphing_function4, df1 = best_fit_non_search_chrome, df2 = Final_CLS_2022_Study_List_Non_Search_model_file_chrome)
 ```
 
+```{r}
+end_time <- Sys.time()
+
+time_chrome = end_time - start_time
+
+time_chrome
+```
 
 ### Cloud
 
 #### Data Readin
+
 ```{r}
+start_time <- Sys.time()
 
 Final_CLS_2022_Study_List_Non_Search_model_file_cloud_pre <-
   Final_CLS_2022_Study_List_Non_Search_model_file %>%
@@ -389,7 +264,7 @@ df_test <-
     cost_spent_on_exposed_group:absolute_lift, parsed_type
   )
 
-#iso_cloud <- isolationForest$new(sample_size = nrow(df_test), num_trees = 10000, seed = 1153)
+iso_cloud <- isolationForest$new(sample_size = nrow(df_test), num_trees = 10000, seed = 1153)
 
 iso_cloud$fit(df_test)
 
@@ -406,9 +281,11 @@ Final_CLS_2022_Study_List_Non_Search_model_file_cloud <-
   named_group_split(pa2)
 
 ```
+
 #### Run Model
+
 ```{r, warning = false}
-fits_non_search_cloud <- model_wrapper_function(df = Final_CLS_2022_Study_List_Non_Search_model_file_cloud,poly_ind = 1)
+fits_non_search_cloud <- model_wrapper_function(df = Final_CLS_2022_Study_List_Non_Search_model_file_cloud,poly_ind = 0)
 
 best_ind_non_search_cloud <- 
   lapply(1:length(Final_CLS_2022_Study_List_Non_Search_model_file_cloud), best_ind_function,df = fits_non_search_cloud,
@@ -421,14 +298,25 @@ best_fit_non_search_cloud <- best_ind_non_search_cloud %>%
 ```
 
 #### Create Graph Object
+
 ```{r}
 graph_list_cloud <- lapply(1:length(best_fit_non_search_cloud), graphing_function4, df1 = best_fit_non_search_cloud, df2 = Final_CLS_2022_Study_List_Non_Search_model_file_cloud)
+```
+
+
+```{r}
+end_time <- Sys.time()
+
+time_cloud = end_time - start_time
 ```
 
 ### YouTube
 
 #### Data Readin
+
 ```{r}
+
+start_time <- Sys.time()
 
 Final_CLS_2022_Study_List_Non_Search_model_file_youtube_pre <-
   Final_CLS_2022_Study_List_Non_Search_model_file %>%
@@ -451,7 +339,7 @@ df_test <-
     cost_spent_on_exposed_group:absolute_lift, parsed_type
   )
 
-#iso_yt <- isolationForest$new(sample_size = nrow(df_test), num_trees = 10000, seed = 1153)
+iso_yt <- isolationForest$new(sample_size = nrow(df_test), num_trees = 10000, seed = 1153)
 
 iso_yt$fit(df_test)
 
@@ -470,8 +358,9 @@ Final_CLS_2022_Study_List_Non_Search_model_file_youtube <-
 ```
 
 #### Run Model
+
 ```{r, warning = false}
-fits_non_search_youtube <- model_wrapper_function(df = Final_CLS_2022_Study_List_Non_Search_model_file_youtube,poly_ind = 1)
+fits_non_search_youtube <- model_wrapper_function(df = Final_CLS_2022_Study_List_Non_Search_model_file_youtube,poly_ind = 0)
 
 best_ind_non_search_youtube <- 
   lapply(1:length(Final_CLS_2022_Study_List_Non_Search_model_file_youtube), best_ind_function,df = fits_non_search_youtube,
@@ -484,14 +373,26 @@ best_fit_non_search_youtube <- best_ind_non_search_youtube %>%
 ```
 
 #### Create Graph Object
+
 ```{r}
 graph_list_youtube <- lapply(1:length(best_fit_non_search_youtube), graphing_function4, df1 = best_fit_non_search_youtube, df2 = Final_CLS_2022_Study_List_Non_Search_model_file_youtube)
 ```
 
+
+```{r}
+end_time <- Sys.time()
+
+time_youtube = end_time - start_time
+```
+
+
 ### DSM
 
 #### Data Readin
+
 ```{r}
+
+start_time <- Sys.time()
 
 Final_CLS_2022_Study_List_Non_Search_model_file_dsm_pre <-
   Final_CLS_2022_Study_List_Non_Search_model_file %>%
@@ -516,7 +417,7 @@ df_test <-
     cost_spent_on_exposed_group:absolute_lift
   )
 
-#iso_dsm <- isolationForest$new(sample_size = nrow(df_test), num_trees = 10000, seed = 1152)
+iso_dsm <- isolationForest$new(sample_size = nrow(df_test), num_trees = 10000, seed = 1152)
 
 iso_dsm$fit(df_test)
 
@@ -535,8 +436,9 @@ Final_CLS_2022_Study_List_Non_Search_model_file_dsm <-
 ```
 
 #### Run Model
+
 ```{r, warning = false}
-fits_non_search_dsm <- model_wrapper_function(df = Final_CLS_2022_Study_List_Non_Search_model_file_dsm,poly_ind = 1)
+fits_non_search_dsm <- model_wrapper_function(df = Final_CLS_2022_Study_List_Non_Search_model_file_dsm,poly_ind = 0)
 
 best_ind_non_search_dsm <- 
   lapply(1:length(Final_CLS_2022_Study_List_Non_Search_model_file_dsm), best_ind_function,df = fits_non_search_dsm,
@@ -549,13 +451,26 @@ best_fit_non_search_dsm <- best_ind_non_search_dsm %>%
 ```
 
 #### Create Graph Object
+
 ```{r}
 graph_list_dsm <- lapply(1:length(best_fit_non_search_dsm), graphing_function4, df1 = best_fit_non_search_dsm, df2 = Final_CLS_2022_Study_List_Non_Search_model_file_dsm)
 ```
+
+
+```{r}
+end_time <- Sys.time()
+
+time_dsm = end_time - start_time
+```
+
+
 ### Pixel
 
 #### Data Readin
+
 ```{r}
+
+start_time <- Sys.time()
 
 Final_CLS_2022_Study_List_Non_Search_model_file_pixel_pre <-
   Final_CLS_2022_Study_List_Non_Search_model_file %>%
@@ -582,7 +497,7 @@ df_test <-
     cost_spent_on_exposed_group:absolute_lift
   )
 
-#iso_pixel <- isolationForest$new(sample_size = nrow(df_test), num_trees = 10000, seed = 1152)
+iso_pixel <- isolationForest$new(sample_size = nrow(df_test), num_trees = 10000, seed = 1152)
 
 iso_pixel$fit(df_test)
 
@@ -604,8 +519,9 @@ Final_CLS_2022_Study_List_Non_Search_model_file_pixel <-
 ```
 
 #### Run Model
+
 ```{r, warning = false}
-fits_non_search_pixel <- model_wrapper_function(df = Final_CLS_2022_Study_List_Non_Search_model_file_pixel,poly_ind = 1)
+fits_non_search_pixel <- model_wrapper_function(df = Final_CLS_2022_Study_List_Non_Search_model_file_pixel,poly_ind = 0)
 
 best_ind_non_search_pixel <- 
   lapply(1:length(Final_CLS_2022_Study_List_Non_Search_model_file_pixel), best_ind_function,df = fits_non_search_pixel,
@@ -618,15 +534,26 @@ best_fit_non_search_pixel <- best_ind_non_search_pixel %>%
 ```
 
 #### Create Graph Object
+
 ```{r}
 graph_list_pixel <- lapply(1:length(best_fit_non_search_pixel), graphing_function4, df1 = best_fit_non_search_pixel, df2 = Final_CLS_2022_Study_List_Non_Search_model_file_pixel)
+```
+
+
+```{r}
+end_time <- Sys.time()
+
+time_pixel = end_time - start_time
 ```
 
 
 ### Fi
 
 #### Data Readin
+
 ```{r}
+
+start_time <- Sys.time()
 
 Final_CLS_2022_Study_List_Non_Search_model_file_fi_pre <-
   Final_CLS_2022_Study_List_Non_Search_model_file %>%
@@ -653,7 +580,7 @@ df_test <-
     cost_spent_on_exposed_group:absolute_lift
   )
 
-#iso_fi <- isolationForest$new(sample_size = nrow(df_test), num_trees = 10000, seed = 1152)
+iso_fi <- isolationForest$new(sample_size = nrow(df_test), num_trees = 10000, seed = 1152)
 
 iso_fi$fit(df_test)
 
@@ -674,10 +601,10 @@ Final_CLS_2022_Study_List_Non_Search_model_file_fi <-
   named_group_split(channel)
 ```
 
-
 #### Run Model
+
 ```{r, warning = false}
-fits_non_search_fi <- model_wrapper_function(df = Final_CLS_2022_Study_List_Non_Search_model_file_fi,poly_ind = 1)
+fits_non_search_fi <- model_wrapper_function(df = Final_CLS_2022_Study_List_Non_Search_model_file_fi,poly_ind = 0)
 
 best_ind_non_search_fi <- 
   lapply(1:length(Final_CLS_2022_Study_List_Non_Search_model_file_fi), best_ind_function,df = fits_non_search_fi,
@@ -690,16 +617,26 @@ best_fit_non_search_fi <- best_ind_non_search_fi %>%
 ```
 
 #### Create Graph Object
+
 ```{r}
 graph_list_fi <- lapply(1:length(best_fit_non_search_fi), graphing_function4, df1 = best_fit_non_search_fi, df2 = Final_CLS_2022_Study_List_Non_Search_model_file_fi)
 ```
 
 
+```{r}
+end_time <- Sys.time()
+
+time_fi = end_time - start_time
+```
+
+
 ### SMB - QLeads
 
-
 #### Data Readin
+
 ```{r}
+
+start_time <- Sys.time()
 
 Final_CLS_2022_Study_List_Non_Search_model_file_smbq_pre <-
   Final_CLS_2022_Study_List_Non_Search_model_file %>%
@@ -745,8 +682,9 @@ Final_CLS_2022_Study_List_Non_Search_model_file_smbq <-
 ```
 
 #### Run Model
+
 ```{r, warning = false}
-fits_non_search_smbq <- model_wrapper_function(df = Final_CLS_2022_Study_List_Non_Search_model_file_smbq,poly_ind = 1)
+fits_non_search_smbq <- model_wrapper_function(df = Final_CLS_2022_Study_List_Non_Search_model_file_smbq,poly_ind = 0)
 
 best_ind_non_search_smbq <- 
   lapply(1:length(Final_CLS_2022_Study_List_Non_Search_model_file_smbq), best_ind_function,df = fits_non_search_smbq,
@@ -759,14 +697,26 @@ best_fit_non_search_smbq <- best_ind_non_search_smbq %>%
 ```
 
 #### Create Graph Object
+
 ```{r}
 graph_list_smbq <- lapply(1:length(best_fit_non_search_smbq), graphing_function4, df1 = best_fit_non_search_smbq, df2 = Final_CLS_2022_Study_List_Non_Search_model_file_smbq)
 ```
 
+
+```{r}
+end_time <- Sys.time()
+
+time_smbq = end_time - start_time
+```
+
+
 ### SMB - BLeads
 
 #### Data Readin
+
 ```{r}
+
+start_time <- Sys.time()
 
 Final_CLS_2022_Study_List_Non_Search_model_file_smbb_pre <-
   Final_CLS_2022_Study_List_Non_Search_model_file %>%
@@ -812,8 +762,9 @@ Final_CLS_2022_Study_List_Non_Search_model_file_smbb <-
 ```
 
 #### Run Model
+
 ```{r, warning = false}
-fits_non_search_smbb <- model_wrapper_function(df = Final_CLS_2022_Study_List_Non_Search_model_file_smbb,poly_ind = 1)
+fits_non_search_smbb <- model_wrapper_function(df = Final_CLS_2022_Study_List_Non_Search_model_file_smbb,poly_ind = 0)
 
 best_ind_non_search_smbb <- 
   lapply(1:length(Final_CLS_2022_Study_List_Non_Search_model_file_smbb), best_ind_function,df = fits_non_search_smbb,
@@ -826,9 +777,19 @@ best_fit_non_search_smbb <- best_ind_non_search_smbb %>%
 ```
 
 #### Create Graph Object
+
 ```{r}
 graph_list_smbb <- lapply(1:length(best_fit_non_search_smbb), graphing_function4, df1 = best_fit_non_search_smbb, df2 = Final_CLS_2022_Study_List_Non_Search_model_file_smbb)
 ```
+
+
+```{r}
+end_time <- Sys.time()
+
+time_smbb = end_time - start_time
+```
+
+
 ## Function to refresh all graphs
 
 ```{r}
@@ -837,10 +798,7 @@ graph_list_smbb <- lapply(1:length(best_fit_non_search_smbb), graphing_function4
 ## for loop of all graph objects
 ```
 
-
-
 ## Export all graph lists
-
 
 ```{r}
 graph_names <- mget(ls(pat = 'graph_list_'))
@@ -855,7 +813,6 @@ lapply(1:length(df_names[[j]]),export_rplots_function2,starting_name = "Non_Sear
       }
        )
 ```
-
 
 ## Grid of all Response Curves
 
@@ -890,19 +847,50 @@ coef.2_matrix %>%  bind_rows()
 
 ```
 
-
-```{r}
-
-```
 ## Graphs with Anomaly Scores
 
 ```{r}
 graph_list.fi <- lapply(1:length(best_fit_non_search_fi), graphing_function4_w_anom, df1 = best_fit_non_search_fi, df2 = Final_CLS_2022_Study_List_Non_Search_model_file_fi)
 
 ### Add GG Text Repel
-ggplotly(graph_list.fi[[2]])
+ggplotly(graph_list.fi[[3]])
 
 ```
+
+# Create all Response Curves - RLM
+
+```{r, warning = FALSE}
+
+
+
+fits.non.search.RLM <- lapply(
+  1:length(df_names),
+  function(i) {
+    model_wrapper_function2(df = df_names[i])
+  }
+)
+
+
+
+
+
+```
+
+
+
+```{r}
+
+
+
+rm(grid,cost_p,cost,response,data,power,y,data2,mod,fits.non.search.chrome_RLM)
+
+
+
+
+```
+
+
+
 
 
 
