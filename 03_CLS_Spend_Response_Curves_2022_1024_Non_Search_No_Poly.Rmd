@@ -138,7 +138,7 @@ sapply(file.sources, source, .GlobalEnv)
 ```{r}
 
 ### powers to try
-powers <- seq(0.3, 0.4, by = 0.05)
+powers <- seq(0.1, 0.9, by = 0.01)
 powers2 <- 1
 
 # For testing purposes
@@ -840,9 +840,9 @@ do.call(grid.arrange,graph_names[i][[1]])
 ## Coef Matrix
 
 ```{r}
-coef.2_matrix <- mget((ls(pat = 'coef_')))
+coef.2_matrix <- mget((ls(pat = 'coef_'))) %>%  bind_rows()
 
-coef.2_matrix %>%  bind_rows()
+coef.2_matrix
 
 
 ```
@@ -857,39 +857,126 @@ ggplotly(graph_list.fi[[3]])
 
 ```
 
+# Create all Response Curves - Ridge/Lasso
+
+```{r, warning = FALSE}
+
+start_time <- Sys.time()
+
+fits.non.search.RIDGE_LASSO <- lapply(
+  1:length(df_names),
+  function(i) {
+    model_wrapper_function(df = df_names[i][[1]],poly_ind = 0)
+  }
+)
+
+end_time <- Sys.time()
+
+combined_ridge_time <- start_time - end_time
+
+best.ind.non.search.RIDGE_LASSO <- lapply(
+  1:length(df_names),
+  function(i) {   
+  lapply(1:length(df_names[i][[1]]), best_ind_function,df = fits.non.search.RIDGE_LASSO[i][[1]],
+         df2 = df_names[i][[1]])
+  }
+)
+
+coef.non.search.RIDGE_LASSO <- lapply(
+  1:length(df_names),
+  function (i){
+  best.ind.non.search.RIDGE_LASSO[i][[1]] %>% bind_rows
+  }
+) %>%
+  bind_rows() %>% 
+  as.data.frame() %>% 
+#  mutate(
+#    cost_p2 = 0,
+#    lambda = 0,
+#    alpha = 0,
+#    powers2 = 0
+#  ) %>% 
+  select(one_of(colnames(coef.2_matrix)))
+
+
+best.fit.non.search.RIDGE_LASSO <- lapply(1:length(df_names),
+      function(j) {
+lapply(1:length(best.ind.non.search.RIDGE_LASSO[[j]]),
+      function(i){
+        best.ind.non.search.RIDGE_LASSO[j][[1]][i] %>% 
+        set_names(nm = best.ind.non.search.RIDGE_LASSO[j][[1]][[i]]["model"])
+      } 
+)
+      }
+       )
+  
+
+
+```
+
+
 # Create all Response Curves - RLM
 
 ```{r, warning = FALSE}
 
 
+start_time <- Sys.time()
 
 fits.non.search.RLM <- lapply(
   1:length(df_names),
   function(i) {
-    model_wrapper_function2(df = df_names[i])
+    model_wrapper_function2(df = df_names[i][[1]])
   }
 )
 
+end_time <- Sys.time()
+
+combined_rlm_time <- start_time - end_time
+
+best.ind.non.search.RLM <- lapply(
+  1:length(df_names),
+  function(i) {   
+  lapply(1:length(df_names[i][[1]]), best_ind_function,df = fits.non.search.RLM[i][[1]],
+         df2 = df_names[i][[1]])
+  }
+)
+
+coef.non.search.RLM <- lapply(
+  1:length(df_names),
+  function (i){
+  best.ind.non.search.RLM[i][[1]] %>% bind_rows
+  }
+) %>%
+  bind_rows() %>% 
+  as.data.frame() %>% 
+  mutate(
+    cost_p2 = 0,
+    lambda = 0,
+    alpha = 0,
+    powers2 = 0
+  ) %>% 
+  select(one_of(colnames(coef.2_matrix)))
 
 
-
-
+best.fit.non.search.RLM <- lapply(1:length(df_names),
+      function(j) {
+lapply(1:length(best.ind.non.search.RLM[[j]]),
+      function(i){
+        best.ind.non.search.RLM[j][[1]][i] %>% 
+        set_names(nm = best.ind.non.search.RLM[j][[1]][[i]]["model"])
+      } 
+)
+      }
+       )
+  
 ```
-
 
 
 ```{r}
 
-
-
-rm(grid,cost_p,cost,response,data,power,y,data2,mod,fits.non.search.chrome_RLM)
-
-
-
+-combined_ridge_time+combined_rlm_time
 
 ```
-
-
 
 
 

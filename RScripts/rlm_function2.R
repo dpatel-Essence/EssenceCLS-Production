@@ -1,4 +1,4 @@
-rlm_function2 =  function(powers, cost = "cost_spent_on_exposed_group" , response = "absolute_lift", data =  Final_CLS_2022_Study_List_Non_Search_model_file_chrome[2][[1]]) {
+rlm_function2 =  function(power, cost = "cost_spent_on_exposed_group" , response = "absolute_lift", data =  Final_CLS_2022_Study_List_Non_Search_model_file_chrome[2][[1]]) {
   grid <- expand.grid(intercept = FALSE, 
                       psi = c("psi.huber", "psi.hampel", "psi.bisquare")
   )
@@ -21,7 +21,7 @@ rlm_function2 =  function(powers, cost = "cost_spent_on_exposed_group" , respons
                 ,getTrainPerf(mod)
                 ,power %>% as.data.frame %>% rename(power = 1)
     ) %>%
-      select(-TrainMAE)
+      select(-TrainMAE,-method)
     )
   )
 }
