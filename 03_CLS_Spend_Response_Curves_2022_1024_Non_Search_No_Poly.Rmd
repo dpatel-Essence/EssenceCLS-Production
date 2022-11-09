@@ -141,9 +141,9 @@ sapply(file.sources, source, .GlobalEnv)
 powers <- seq(0.1, 0.9, by = 0.01)
 powers2 <- 1
 
-# For testing purposes
-#powers <- seq(0.4, 0.5, by = 0.05)
-#powers2 <-seq(0.5,1, by = 0.5)
+### Powers to Try
+#powers <- seq(0.1, 0.9, by = 0.01)
+#powers2 <-seq(1.5,3, by = 0.25)
 
 
 ### Lambda parameters
@@ -789,15 +789,6 @@ end_time <- Sys.time()
 time_smbb = end_time - start_time
 ```
 
-
-## Function to refresh all graphs
-
-```{r}
-## Remove two youtube studies from original, add SMB EDA
-
-## for loop of all graph objects
-```
-
 ## Export all graph lists
 
 ```{r}
@@ -805,13 +796,13 @@ graph_names <- mget(ls(pat = 'graph_list_'))
    
 df_names <- mget(setdiff(ls(pattern = 'Final_CLS_2022_Study_List_Non_Search_model_file_'), ls(pattern = "pre")))
 
-rm(Final_CLS_2022_Study_List_Non_Search_model_file_Chrome,Final_CLS_2022_Study_List_Non_Search_model_file_Cloud,Final_CLS_2022_Study_List_Non_Search_model_file_YouTube)
+#rm(Final_CLS_2022_Study_List_Non_Search_model_file_Chrome,Final_CLS_2022_Study_List_Non_Search_model_file_Cloud,Final_CLS_2022_Study_List_Non_Search_model_file_YouTube)
 
-lapply(1:length(graph_names),
-      function(j) {
-lapply(1:length(df_names[[j]]),export_rplots_function2,starting_name = "Non_Search_",folder_name = folder_name,df_list = df_names[[j]],graphing_list = graph_names[j][[1]])
-      }
-       )
+#lapply(1:length(graph_names),
+#      function(j) {
+#lapply(1:length(df_names[[j]]),export_rplots_function2,starting_name = "Non_Search_",folder_name = folder_name,df_list = #df_names[[j]],graphing_list = graph_names[j][[1]])
+#      }
+#       )
 ```
 
 ## Grid of all Response Curves
@@ -968,6 +959,8 @@ lapply(1:length(best.ind.non.search.RLM[[j]]),
 )
       }
        )
+
+
   
 ```
 
@@ -979,5 +972,90 @@ lapply(1:length(best.ind.non.search.RLM[[j]]),
 ```
 
 
+```{r, warning = FALSE}
+
+graph.list.rlm <- lapply(1:length(df_names),
+      function(i){
+      lapply(1:length(best.fit.non.search.RLM[i][[1]]), graphing_function_rlm, df1= best.fit.non.search.RLM[i],df2 = df_names[i])
+      } 
+)
+
+
+graph.list.RIDGE_LASSO <- lapply(1:length(df_names),
+      function(i){
+      lapply(1:length(best.fit.non.search.RIDGE_LASSO[i][[1]]), graphing_function_elasticnet, df1= best.fit.non.search.RIDGE_LASSO[i],df2 = df_names[i])
+      } 
+)
+
+
+
+
+```
+
+
+### Export all Plots
+
+```{r}
+
+folder_name1 <- paste0("Output/", "outputfiles_", Sys.Date(), "_", "RLM", "/")
+dir.create(folder_name1) # it will throw a warning if folder exists
+
+lapply(1:length(df_names),
+      function(j) {
+lapply(1:length(df_names[[j]]),export_rplots_function2,starting_name = "Non_Search_",folder_name = folder_name1,df_list = df_names[[j]],graphing_list = graph.list.rlm[j][[1]])
+      }
+       )
+
+folder_name2 <- paste0("Output/", "outputfiles_", Sys.Date(), "_", "ElasticNet", "/")
+dir.create(folder_name2) # it will throw a warning if folder exists
+
+
+lapply(1:length(df_names),
+      function(j) {
+lapply(1:length(df_names[[j]]),export_rplots_function2,starting_name = "Non_Search_",folder_name = folder_name2,df_list = df_names[[j]],graphing_list = graph.list.RIDGE_LASSO[j][[1]])
+      }
+       )
+
+```
+
+### Show Graphs
+
+```{r}
+lapply(1:length(df_names),
+function(j){
+  subplot(graph.list.rlm[j][[1]], nrows = length(graph.list.rlm[j][[1]]))
+}
+)
+
+
+lapply(1:length(df_names),
+function(i){
+#p1 = graph_names[i][[1]]
+do.call(grid.arrange,graph.list.rlm[i][[1]])
+#return(grid.arrange(grobs = p1))
+}
+)
+
+
+
+```
+
+```{r}
+lapply(1:length(df_names),
+function(j){
+  subplot(graph.list.RIDGE_LASSO[j][[1]], nrows = length(graph.list.RIDGE_LASSO[j][[1]]))
+}
+)
+
+
+lapply(1:length(df_names),
+function(i){
+#p1 = graph_names[i][[1]]
+do.call(grid.arrange,graph.list.RIDGE_LASSO[i][[1]])
+#return(grid.arrange(grobs = p1))
+}
+)
+
+```
 
 
