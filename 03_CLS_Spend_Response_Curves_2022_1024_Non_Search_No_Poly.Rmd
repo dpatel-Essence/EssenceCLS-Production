@@ -1059,3 +1059,126 @@ do.call(grid.arrange,graph.list.RIDGE_LASSO[i][[1]])
 ```
 
 
+# Testing Metafor Package
+
+```{r}
+
+p_load(lme4)
+p_load(metaforest)
+
+```
+
+## Testing on DSM Data
+
+### Load in Data
+```{r}
+
+
+Final_CLS_2022_Study_List_Non_Search_model_file_dsm_pre <-
+  Final_CLS_2022_Study_List_Non_Search_model_file %>%
+  filter(pa == "DSM") %>%
+  filter(region_v2 != "APAC") %>%
+  # filter(absolute_lift < 1000) # %>%
+  # filter(study_id != '6297420') #%>%
+  #  filter(study_id !='149161711') %>%
+  #  filter(study_id != '148613002') %>%
+  # filter(study_id !='3284625') %>%
+  #  filter(study_id !='3329131')
+  mutate(
+    id2 = row_number()
+  )
+
+df_test <-
+  Final_CLS_2022_Study_List_Non_Search_model_file_dsm_pre %>%
+  # select(-study_id, -id2, -region, -scaling_factor, -quarter, -pa, -study_name)
+  select(
+    region_v2, country, channel, tactic,
+    # treatment_user_count:control,
+    cost_spent_on_exposed_group:absolute_lift
+  )
+
+iso_dsm <- isolationForest$new(sample_size = nrow(df_test), num_trees = 10000, seed = 1152)
+
+iso_dsm$fit(df_test)
+
+scores_train <- df_test %>%
+  iso_dsm$predict() %>%
+  arrange(desc(anomaly_score))
+
+Final_CLS_2022_Study_List_Non_Search_model_file_dsm_Meta4_V1 <-
+  Final_CLS_2022_Study_List_Non_Search_model_file_dsm_pre %>%
+  left_join(scores_train, by = c("id2" = "id")) %>%
+ filter(average_depth > 5.1)
+
+
+Final_CLS_2022_Study_List_Non_Search_model_file_dsm_Meta4 <-
+  Final_CLS_2022_Study_List_Non_Search_model_file_dsm_Meta4_V1 %>%
+  named_group_split(region_v2)
+
+```
+
+### Standardize Data
+
+```{r}
+Final_CLS_2022_Study_List_Non_Search_model_file_dsm_Meta4_V1 %>% 
+  mutate(
+    
+  )
+```
+
+
+### Run a Fixed-Effects Model
+[Documentation](https://cjvanlissa.github.io/Doing-Meta-Analysis-in-R/fixedef.html)
+```{r, fig.height= 15}
+
+
+#df_smd 
+
+
+i = 1
+
+yi_DSM = Final_CLS_2022_Study_List_Non_Search_model_file_dsm_Meta4[[i]]['absolute_lift'] %>% unlist()
+vi_DSM = Final_CLS_2022_Study_List_Non_Search_model_file_dsm_Meta4[[i]]['Significant_Spend']^1 %>% unlist()
+split2 = factor(Final_CLS_2022_Study_List_Non_Search_model_file_dsm_Meta4[[i]]['channel'] %>% unlist(),labels = unique(Final_CLS_2022_Study_List_Non_Search_model_file_dsm_Meta4[[i]]['channel']) %>% unlist())
+
+
+m_reg <- rma(yi = yi_DSM,     # The d-column of the df, which contains Cohen's d
+         vi = vi_DSM   # The vi-column of the df, which contains the variances
+         ,mods = ~split2-1 #to remove intercept between slopes
+         )  
+       
+
+mod1_test
+
+#rm(Final_CLS_2022_Study_List_Non_Search_model_file_dsm_Meta4_V1)#,mod1_test, i)
+
+predict(mod1_test)
+
+
+forest(mod1_test, slab = Final_CLS_2022_Study_List_Non_Search_model_file_dsm_Meta4[[i]]['study_name'] %>% unlist(), addcred = TRUE)
+```
+### Additional Test
+
+```{r}
+
+# Specify basic plot, mapping sex to the x-axis, effect size 'd' to the y-axis,
+# and 'weights' to the weight parameter.
+
+Final_CLS_2022_Study_List_Non_Search_model_file_dsm_Meta4[[i]] %>% 
+  ggplot()+
+  aes(
+    x = cost_spent_on_exposed_group,
+    y = absolute_lift,
+    size = 1/sqrt(cost_spent_on_exposed_group)
+  ) +
+  geom_point(shape = 1) + # Add scatter
+  geom_abline(intercept = m_reg$b[1], slope = m_reg$b[3]) + # Add regression line
+  theme_bw() + # Apply black and white theme
+  theme(legend.position = "none") # Remove legend
+
+```
+
+```{r}
+
+```
+
