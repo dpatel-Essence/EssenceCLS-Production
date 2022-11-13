@@ -38,6 +38,8 @@ p_load(htmlwidgets)
 p_load(solitude)
 p_load(mlbench)
 p_load(uwot)
+p_load(lme4)
+p_load(lmerTest)
 ```
 
 # Use Dataset created from 02_CLS_Data_Summary_2022_0914_Data_Analysis File
@@ -1108,23 +1110,48 @@ scores_train <- df_test %>%
 Final_CLS_2022_Study_List_Non_Search_model_file_dsm_Meta4_V1 <-
   Final_CLS_2022_Study_List_Non_Search_model_file_dsm_pre %>%
   left_join(scores_train, by = c("id2" = "id")) %>%
- filter(average_depth > 5.1)
+ filter(average_depth > 5.209)
 
 
 Final_CLS_2022_Study_List_Non_Search_model_file_dsm_Meta4 <-
-  Final_CLS_2022_Study_List_Non_Search_model_file_dsm_Meta4_V1 %>%
+Final_CLS_2022_Study_List_Non_Search_model_file_dsm_Meta4_V1 %>% 
+  mutate(
+    p1 = exposed/treatment_user_count,
+    q1 = 1 - p1,
+    n1 = treatment_user_count,
+    sd1 = sqrt(p1*q1*n1),
+    p2 = scaled_control/treatment_user_count,
+    q2 = 1-p2,
+    n2 = treatment_user_count, 
+    sd2 = sqrt(p2*q2*n2),
+    cost_p = cost_spent_on_exposed_group ^ 0.4
+  ) %>% 
+  select(-p1,-q1,-n1,-p2,-q2,-n2) %>% 
   named_group_split(region_v2)
 
 ```
 
-### Standardize Data
+### Standardize Data and after calculating standard deviation
 
 ```{r}
-Final_CLS_2022_Study_List_Non_Search_model_file_dsm_Meta4_V1 %>% 
-  mutate(
-    
+
+df_SMD <- list()
+for (i in 1:length(Final_CLS_2022_Study_List_Non_Search_model_file_dsm_Meta4)){
+  df_SMD[[i]] <-
+  escalc(
+    measure = "SMD",
+                 m1i = exposed,
+                 m2i = scaled_control,
+                 sd1i = sd1,
+                 sd2i = sd2,
+                 n1i = treatment_user_count,
+                 n2i = treatment_user_count,
+    data = Final_CLS_2022_Study_List_Non_Search_model_file_dsm_Meta4[[i]]
   )
+  names(df_SMD)[i] <- names(Final_CLS_2022_Study_List_Non_Search_model_file_dsm_Meta4[i])
+}
 ```
+
 
 
 ### Run a Fixed-Effects Model
@@ -1132,30 +1159,28 @@ Final_CLS_2022_Study_List_Non_Search_model_file_dsm_Meta4_V1 %>%
 ```{r, fig.height= 15}
 
 
-#df_smd 
-
 
 i = 1
 
-yi_DSM = Final_CLS_2022_Study_List_Non_Search_model_file_dsm_Meta4[[i]]['absolute_lift'] %>% unlist()
-vi_DSM = Final_CLS_2022_Study_List_Non_Search_model_file_dsm_Meta4[[i]]['Significant_Spend']^1 %>% unlist()
-split2 = factor(Final_CLS_2022_Study_List_Non_Search_model_file_dsm_Meta4[[i]]['channel'] %>% unlist(),labels = unique(Final_CLS_2022_Study_List_Non_Search_model_file_dsm_Meta4[[i]]['channel']) %>% unlist())
+yi_DSM = df_SMD[[i]]['absolute_lift'] %>% unlist()
+vi_DSM = df_SMD[[i]]['sd1'] %>% unlist()
+split2 = factor(df_SMD[[i]]['channel'] %>% unlist(),labels = unique(df_SMD[[i]]['channel']) %>% unlist())
 
 
-m_reg <- rma(yi = yi_DSM,     # The d-column of the df, which contains Cohen's d
-         vi = vi_DSM   # The vi-column of the df, which contains the variances
-         ,mods = ~split2-1 #to remove intercept between slopes
+m_reg <- rma(yi = yi,     # The d-column of the df, which contains Cohen's d
+         vi = vi   # The vi-column of the df, which contains the variances
+       ,mods = ~channel:cost_p-1 #to remove intercept between slopes
+       ,data = df_SMD[[i]]
          )  
        
-
-mod1_test
+m_reg
 
 #rm(Final_CLS_2022_Study_List_Non_Search_model_file_dsm_Meta4_V1)#,mod1_test, i)
 
-predict(mod1_test)
+predict(m_reg)
 
 
-forest(mod1_test, slab = Final_CLS_2022_Study_List_Non_Search_model_file_dsm_Meta4[[i]]['study_name'] %>% unlist(), addcred = TRUE)
+forest(m_reg, slab = df_SMD[[i]]['study_name'] %>% unlist(), addcred = TRUE)
 ```
 ### Additional Test
 
@@ -1164,21 +1189,103 @@ forest(mod1_test, slab = Final_CLS_2022_Study_List_Non_Search_model_file_dsm_Met
 # Specify basic plot, mapping sex to the x-axis, effect size 'd' to the y-axis,
 # and 'weights' to the weight parameter.
 
-Final_CLS_2022_Study_List_Non_Search_model_file_dsm_Meta4[[i]] %>% 
+df_SMD[[i]] %>% 
   ggplot()+
   aes(
     x = cost_spent_on_exposed_group,
-    y = absolute_lift,
-    size = 1/sqrt(cost_spent_on_exposed_group)
+    y = yi,
+    size = 1/sqrt(vi)
   ) +
   geom_point(shape = 1) + # Add scatter
-  geom_abline(intercept = m_reg$b[1], slope = m_reg$b[3]) + # Add regression line
-  theme_bw() + # Apply black and white theme
+  geom_abline(intercept = 0, slope = m_reg$b[2]) + # Add regression line
+ # theme_bw() + # Apply black and white theme
   theme(legend.position = "none") # Remove legend
 
 ```
 
+
+### Mixed Effects Model
+
+Documentation:
+* https://pages.stat.wisc.edu/~bates/UseR2008/WorkshopD.pdf
+
 ```{r}
 
+i = 1
+
+mod_lme4 <- lmer(formula = log(absolute_lift) ~ 0 + cost_p
+       #          + region_v2
+             #     + channel 
+    #               + (0+ region_v2|channel)
+                   + (1 + cost_p|channel) 
+     #              + (0+ 1|channel)
+         #          + (1+ 1|channel:tactic)
+      #             + (channel|tactic)
+    #               +(cost_p:channel)
+               ,data = df_SMD[[i]], REML =  TRUE) #False calls on MLE which are known to be biased
+
+
+summary(mod_lme4)
+
+predict(mod_lme4)
+
+df_SMD[[i]]$preds <- predict(mod_lme4)
+
+fixef(mod_lme4)
+ranef(mod_lme4, drop = FALSE)
 ```
+
+```{r}
+p<-
+df_SMD[[i]] %>%   
+  ggplot(aes(x=cost_spent_on_exposed_group, y=preds, group = channel, colour = channel)) +
+  geom_line() + 
+  labs(x="Spend", y="Absolute Lift") +
+  ggtitle("Mixed Effects Model") + 
+#  scale_colour_discrete('pa')+
+  geom_jitter(aes(x=cost_spent_on_exposed_group, y = log(absolute_lift), size = vi )) 
+
+p
+
+ggplotly(p)
+
+```
+
+
+
+### Updated Plotting Function
+https://lmudge13.github.io/sample_code/mixed_effects.html
+```{r}
+p_load(sjPlot) #for plotting lmer and glmer mods
+p_load(sjmisc) 
+p_load(effects)
+p_load(sjstats) #use for r2 functions
+
+
+sjPlot::plot_model(mod_lme4)
+sjPlot:: tab_model(mod_lme4)
+
+```
+
+```{r}
+effects_costp <- effects::effect(term= "cost_p", mod= mod_lme4) %>% as.data.frame()
+summary(effects_costp) #output of what the values are
+
+```
+
+```{r}
+  ggplot() + 
+  #2
+  geom_point(data=df_SMD[[i]], aes(cost_p, log(absolute_lift))) + 
+  #3
+  geom_point(data=effects_costp, aes(x=cost_p, y=fit), color="blue") +
+  #4
+  geom_line(data=effects_costp, aes(x=cost_p, y=fit), color="blue") +
+  #5
+  geom_ribbon(data= effects_costp, aes(x=cost_p, ymin=lower, ymax=upper), alpha= 0.3, fill="blue") +
+  #6
+  labs(x="cost_p", y="Log(Absolute Lift)")
+```
+
+
 
