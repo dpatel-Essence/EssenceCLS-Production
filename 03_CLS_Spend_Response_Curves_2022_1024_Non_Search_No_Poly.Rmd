@@ -1135,6 +1135,8 @@ Final_CLS_2022_Study_List_Non_Search_model_file_dsm_Meta4_V1 %>%
 
 ```{r}
 
+p_load(metaforest)
+
 df_SMD <- list()
 for (i in 1:length(Final_CLS_2022_Study_List_Non_Search_model_file_dsm_Meta4)){
   df_SMD[[i]] <-
